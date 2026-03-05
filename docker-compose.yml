@@ -1,0 +1,62 @@
+
+services:
+  # ─────────────────────────────────────────
+  # Redis
+  # ─────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: pm_redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD:-pm_redis_pass} --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-pm_redis_pass}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────
+  # MinIO (S3-compatible storage)
+  # ─────────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: pm_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-pm_minio_user}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-pm_minio_pass}
+    ports:
+      - "9000:9000"   # API S3
+      - "9001:9001"   # Console Web UI
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────
+  # MinIO - Criação automática do bucket
+  # ─────────────────────────────────────────
+  minio_init:
+    image: minio/mc:latest
+    container_name: pm_minio_init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+        mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-pm_minio_user} ${MINIO_ROOT_PASSWORD:-pm_minio_pass};
+        mc mb --ignore-existing local/${MINIO_BUCKET:-pm-attachments};
+        mc anonymous set none local/${MINIO_BUCKET:-pm-attachments};
+        echo 'Bucket criado com sucesso.';
+      "
+
+volumes:
+  redis_data:
+  minio_data:

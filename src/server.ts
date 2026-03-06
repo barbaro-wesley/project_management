@@ -9,11 +9,21 @@ import { redisClient, redisSub } from "@infra/redis/redis.client";
 import { ensureBucketExists } from "@infra/storage/minio.client";
 import { EventPublisher } from "@infra/redis/event-publisher";
 import { createNotificationWorker } from "@infra/queue/workers/notification.worker";
-
+async function clearRateLimitKeys() {
+  if (env.NODE_ENV !== "development") return;
+  const prefixes = ["rl:global:", "rl:auth:", "rl:upload:", "rl:invite:"];
+  for (const prefix of prefixes) {
+    const keys = await redisClient.keys(`${prefix}*`);
+    if (keys.length > 0) {
+      await redisClient.del(...keys);
+      console.log(`🧹 Rate limit limpo: ${prefix} (${keys.length} chaves)`);
+    }
+  }
+}
 async function bootstrap() {
   await prisma.$connect();
   console.log("✅ PostgreSQL conectado");
-
+ await clearRateLimitKeys();
   await ensureBucketExists();
 
   const app        = createApp();

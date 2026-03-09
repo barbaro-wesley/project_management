@@ -18,7 +18,7 @@ export async function getUserWorkspaceRole(
 
   // 2. Busca no banco
   const member = await prisma.workspaceMember.findUnique({
-    where:  { workspaceId_userId: { workspaceId, userId } },
+    where: { workspaceId_userId: { workspaceId, userId } },
     select: { role: true },
   });
 
@@ -41,16 +41,39 @@ export async function getUserBoardRole(
   const cached = await redisClient.get(cacheKey);
   if (cached) return cached as BoardRole;
 
-  const member = await prisma.boardMember.findUnique({
-    where:  { boardId_userId: { boardId, userId } },
+  // 1. Verifica membro direto do board
+  const boardMember = await prisma.boardMember.findUnique({
+    where: { boardId_userId: { boardId, userId } },
     select: { role: true },
   });
 
-  if (!member) return null;
+  if (boardMember) {
+    await redisClient.set(cacheKey, boardMember.role, "EX", CACHE_TTL);
+    return boardMember.role;
+  }
 
-  await redisClient.set(cacheKey, member.role, "EX", CACHE_TTL);
+  // 2. Fallback: OWNER/ADMIN do workspace têm papel OWNER no board automaticamente
+  const board = await prisma.board.findUnique({
+    where: { id: boardId },
+    select: { workspaceId: true },
+  });
 
-  return member.role;
+  if (board) {
+    const workspaceMember = await prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId: board.workspaceId, userId } },
+      select: { role: true },
+    });
+
+    if (
+      workspaceMember?.role === WorkspaceRole.OWNER ||
+      workspaceMember?.role === WorkspaceRole.ADMIN
+    ) {
+      await redisClient.set(cacheKey, BoardRole.OWNER, "EX", CACHE_TTL);
+      return BoardRole.OWNER;
+    }
+  }
+
+  return null;
 }
 
 // ─── Invalidação de cache ─────────────────────────────────────────────────────

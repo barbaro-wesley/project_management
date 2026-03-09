@@ -2,9 +2,9 @@ import { Client as MinioClient } from "minio";
 import { env } from "@config/env";
 
 export const minio = new MinioClient({
-  endPoint:  env.MINIO_ENDPOINT,
-  port:      env.MINIO_PORT,
-  useSSL:    env.MINIO_USE_SSL,
+  endPoint: env.MINIO_ENDPOINT,
+  port: env.MINIO_PORT,
+  useSSL: env.MINIO_USE_SSL,
   accessKey: env.MINIO_ROOT_USER,
   secretKey: env.MINIO_ROOT_PASSWORD,
 });
@@ -17,4 +17,20 @@ export async function ensureBucketExists() {
   } else {
     console.log(`✅ MinIO bucket OK: ${env.MINIO_BUCKET}`);
   }
+
+  // Permite leitura pública apenas na pasta avatars/
+  const policy = JSON.stringify({
+    Version: "2012-10-17",
+    Statement: [
+      {
+        Effect: "Allow",
+        Principal: { AWS: ["*"] },
+        Action: ["s3:GetObject"],
+        Resource: [`arn:aws:s3:::${env.MINIO_BUCKET}/avatars/*`],
+      },
+    ],
+  });
+
+  await minio.setBucketPolicy(env.MINIO_BUCKET, policy);
+  console.log(`✅ MinIO bucket policy OK: leitura pública em avatars/`);
 }

@@ -7,33 +7,33 @@ import { env } from "@config/env";
 
 const BASE_COOKIE_OPTIONS = {
   httpOnly: true,
-  secure:   env.NODE_ENV === "production",  // HTTPS apenas em prod
-  sameSite: "strict" as const,
+  secure: env.NODE_ENV === "production",
+  sameSite: env.NODE_ENV === "production" ? "none" as const : "lax" as const, // ← corrigido
 };
 
 function setAuthCookies(res: Response, tokens: AuthService.TokenPair) {
   res.cookie("access_token", tokens.accessToken, {
     ...BASE_COOKIE_OPTIONS,
-    maxAge: 15 * 60 * 1000, // 15 minutos em ms
+    maxAge: 15 * 60 * 1000,
   });
 
   res.cookie("refresh_token", tokens.refreshToken, {
     ...BASE_COOKIE_OPTIONS,
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 dias em ms
-    path:   "/api/auth/refresh",       // cookie só enviado nessa rota
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    path: "/api/auth", // ← cobre /refresh e outras rotas de auth
   });
 }
 
 function clearAuthCookies(res: Response) {
   res.clearCookie("access_token");
-  res.clearCookie("refresh_token", { path: "/api/auth/refresh" });
+  res.clearCookie("refresh_token", { path: "/api/auth" }); // ← mesmo path
 }
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
 export async function register(req: Request, res: Response, next: NextFunction) {
   try {
-    const dto  = registerDto.parse(req.body);
+    const dto = registerDto.parse(req.body);
     const user = await AuthService.registerUser(dto);
     res.status(201).json({ status: "ok", data: user });
   } catch (err) {
@@ -43,7 +43,7 @@ export async function register(req: Request, res: Response, next: NextFunction) 
 
 export async function login(req: Request, res: Response, next: NextFunction) {
   try {
-    const dto    = loginDto.parse(req.body);
+    const dto = loginDto.parse(req.body);
     const tokens = await AuthService.loginUser(dto);
 
     setAuthCookies(res, tokens);

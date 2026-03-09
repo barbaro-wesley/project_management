@@ -8,15 +8,15 @@ import type { RegisterDto, LoginDto } from "./dtos/auth.dto";
 const SALT_ROUNDS = 12;
 
 export interface TokenPair {
-  accessToken:  string;
+  accessToken: string;
   refreshToken: string;
 }
 
 export interface JwtPayload {
-  sub:   string; // userId
+  sub: string; // userId
   email: string;
-  iat?:  number;
-  exp?:  number;
+  iat?: number;
+  exp?: number;
 }
 
 // ─── Helpers de token ────────────────────────────────────────────────────────
@@ -45,9 +45,27 @@ export async function registerUser(dto: RegisterDto) {
 
   const passwordHash = await bcrypt.hash(dto.password, SALT_ROUNDS);
 
-  const user = await prisma.user.create({
-    data: { name: dto.name, email: dto.email, passwordHash },
-    select: { id: true, name: true, email: true, createdAt: true },
+  // Cria o usuário e atribui o role USER padrão numa transaction,
+  // garantindo que os dois acontecem juntos ou nenhum acontece.
+  const user = await prisma.$transaction(async (tx) => {
+    const created = await tx.user.create({
+      data: { name: dto.name, email: dto.email, passwordHash },
+      select: { id: true, name: true, email: true, createdAt: true },
+    });
+
+    // Busca o role USER — criado pelo seed, mas protege caso não exista ainda
+    const userRole = await tx.systemRole.findUnique({
+      where: { name: "USER" },
+      select: { id: true },
+    });
+
+    if (userRole) {
+      await tx.userSystemRole.create({
+        data: { userId: created.id, roleId: userRole.id },
+      });
+    }
+
+    return created;
   });
 
   return user;
@@ -62,11 +80,11 @@ export async function loginUser(dto: LoginDto): Promise<TokenPair> {
 
   await prisma.user.update({
     where: { id: user.id },
-    data:  { lastActiveAt: new Date() },
+    data: { lastActiveAt: new Date() },
   });
 
   return {
-    accessToken:  signAccessToken(user.id, user.email),
+    accessToken: signAccessToken(user.id, user.email),
     refreshToken: signRefreshToken(user.id),
   };
 }
@@ -84,16 +102,57 @@ export async function refreshTokens(token: string): Promise<TokenPair> {
   if (!user) throw new AppError("Usuário não encontrado", 401, "INVALID_REFRESH_TOKEN");
 
   return {
-    accessToken:  signAccessToken(user.id, user.email),
+    accessToken: signAccessToken(user.id, user.email),
     refreshToken: signRefreshToken(user.id),
   };
 }
 
 export async function getMe(userId: string) {
   const user = await prisma.user.findUnique({
-    where:  { id: userId },
-    select: { id: true, name: true, email: true, avatarUrl: true, createdAt: true },
+    where: { id: userId },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      avatarUrl: true,
+      createdAt: true,
+      // Retorna os roles e permissions do usuário para o frontend
+      // usar no controle de UI
+      systemRoles: {
+        select: {
+          role: {
+            select: {
+              id: true,
+              name: true,
+              permissions: {
+                select: {
+                  permission: {
+                    select: { action: true, group: true },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
   });
+
   if (!user) throw new AppError("Usuário não encontrado", 404, "NOT_FOUND");
-  return user;
+
+  // Achata as permissions em um array simples para facilitar o uso no frontend:
+  // { roles: ["USER"], permissions: ["users:read", "workspaces:read"] }
+  const roles = user.systemRoles.map((ur) => ur.role.name);
+  const permissions = user.systemRoles
+    .flatMap((ur) => ur.role.permissions.map((rp) => rp.permission.action));
+
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    avatarUrl: user.avatarUrl,
+    createdAt: user.createdAt,
+    roles,
+    permissions, // ex: ["users:read", "users:update"]
+  };
 }

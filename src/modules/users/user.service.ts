@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import { AppError } from "@shared/errors/app.error";
 import * as UserRepository from "./user.repository";
+import * as StorageService from "@infra/storage/storage.service";
 import type {
   CreateUserDto,
   UpdateUserDto,
@@ -33,8 +34,8 @@ export async function createUser(dto: CreateUserDto) {
 }
 
 export async function updateUser(
-  targetId:    string,
-  dto:         UpdateUserDto,
+  targetId: string,
+  dto: UpdateUserDto,
   requesterId: string,
 ) {
   // Garante que o usuário alvo existe
@@ -63,12 +64,43 @@ export async function deleteUser(targetId: string, requesterId: string) {
   await UserRepository.remove(targetId);
 }
 
+// ─── Avatar ───────────────────────────────────────────────────────────────────
+
+export async function uploadAvatar(userId: string, buffer: Buffer) {
+  const user = await UserRepository.findById(userId);
+  if (!user) throw new AppError("Usuário não encontrado", 404, "NOT_FOUND");
+
+  // Se já tem avatar, remove o arquivo antigo do MinIO antes de subir o novo
+  if (user.avatarUrl) {
+    const oldPath = StorageService.extractObjectPath(user.avatarUrl);
+    if (oldPath) await StorageService.deleteAvatar(oldPath);
+  }
+
+  const { url } = await StorageService.uploadAvatar(userId, buffer);
+
+  return UserRepository.update(userId, { avatarUrl: url });
+}
+
+export async function removeAvatar(userId: string) {
+  const user = await UserRepository.findById(userId);
+  if (!user) throw new AppError("Usuário não encontrado", 404, "NOT_FOUND");
+
+  if (!user.avatarUrl) {
+    throw new AppError("Usuário não possui avatar", 400, "NO_AVATAR");
+  }
+
+  const objectPath = StorageService.extractObjectPath(user.avatarUrl);
+  if (objectPath) await StorageService.deleteAvatar(objectPath);
+
+  return UserRepository.update(userId, { avatarUrl: null });
+}
+
 // ─── System Roles ─────────────────────────────────────────────────────────────
 
 export async function assignRoleToUser(
-  targetId:    string,
-  dto:         AssignSystemRoleDto,
-  grantedBy:   string,
+  targetId: string,
+  dto: AssignSystemRoleDto,
+  grantedBy: string,
 ) {
   const target = await UserRepository.findById(targetId);
   if (!target) throw new AppError("Usuário não encontrado", 404, "NOT_FOUND");
@@ -78,7 +110,7 @@ export async function assignRoleToUser(
 
 export async function revokeRoleFromUser(
   targetId: string,
-  roleId:   string,
+  roleId: string,
 ) {
   const target = await UserRepository.findById(targetId);
   if (!target) throw new AppError("Usuário não encontrado", 404, "NOT_FOUND");

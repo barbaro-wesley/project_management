@@ -1,9 +1,25 @@
 import { Router } from "express";
-import  {authGuard}       from "@shared/middlewares/auth.guard";
+import multer from "multer";
+import { authGuard } from "@shared/middlewares/auth.guard";
 import { requirePermission } from "@shared/middlewares/require-permission.middleware";
-import * as UserController   from "./user.controller";
+import * as UserController from "./user.controller";
 
 const router = Router();
+
+// ─── Multer — avatar upload ───────────────────────────────────────────────────
+
+const avatarUpload = multer({
+  storage: multer.memoryStorage(), // buffer direto, sem tocar no disco
+  limits: { fileSize: 2 * 1024 * 1024 }, // 2MB máximo
+  fileFilter: (_req, file, cb) => {
+    const allowed = ["image/jpeg", "image/png", "image/webp"];
+    if (allowed.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Formato inválido. Use JPEG, PNG ou WebP"));
+    }
+  },
+});
 
 // Todas as rotas exigem autenticação
 router.use(authGuard);
@@ -66,6 +82,30 @@ router.delete(
   "/:id",
   requirePermission("users:delete"),
   UserController.remove,
+);
+
+// ─── Avatar do próprio usuário ────────────────────────────────────────────────
+
+/**
+ * PATCH /users/me/avatar
+ * Faz upload do avatar do usuário autenticado.
+ * Corpo: multipart/form-data com campo "avatar"
+ * - Converte para WebP 256x256 automaticamente
+ * - Substitui o avatar anterior se existir
+ */
+router.patch(
+  "/me/avatar",
+  avatarUpload.single("avatar"),
+  UserController.uploadAvatar,
+);
+
+/**
+ * DELETE /users/me/avatar
+ * Remove o avatar do usuário autenticado.
+ */
+router.delete(
+  "/me/avatar",
+  UserController.removeAvatar,
 );
 
 // ─── System Roles do Usuário ──────────────────────────────────────────────────

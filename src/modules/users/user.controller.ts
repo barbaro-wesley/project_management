@@ -11,7 +11,7 @@ import {
 
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
-    const query  = listUsersDto.parse(req.query);
+    const query = listUsersDto.parse(req.query);
     const result = await UserService.listUsers(query);
     res.json({ status: "ok", ...result });
   } catch (err) {
@@ -34,7 +34,7 @@ export async function getOne(req: Request, res: Response, next: NextFunction) {
 
 export async function create(req: Request, res: Response, next: NextFunction) {
   try {
-    const dto  = createUserDto.parse(req.body);
+    const dto = createUserDto.parse(req.body);
     const user = await UserService.createUser(dto);
     res.status(201).json({ status: "ok", data: user });
   } catch (err) {
@@ -46,7 +46,7 @@ export async function create(req: Request, res: Response, next: NextFunction) {
 
 export async function update(req: Request, res: Response, next: NextFunction) {
   try {
-    const dto  = updateUserDto.parse(req.body);
+    const dto = updateUserDto.parse(req.body);
     const user = await UserService.updateUser(
       req.params.id,
       dto,
@@ -69,6 +69,31 @@ export async function remove(req: Request, res: Response, next: NextFunction) {
   }
 }
 
+// ─── Avatar ───────────────────────────────────────────────────────────────────
+
+export async function uploadAvatar(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.file) {
+      res.status(400).json({ status: "error", message: "Nenhum arquivo enviado", code: "NO_FILE" });
+      return;
+    }
+
+    const user = await UserService.uploadAvatar(req.user!.id, req.file.buffer);
+    res.json({ status: "ok", data: user });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function removeAvatar(req: Request, res: Response, next: NextFunction) {
+  try {
+    const user = await UserService.removeAvatar(req.user!.id);
+    res.json({ status: "ok", data: user });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // ─── System Roles ─────────────────────────────────────────────────────────────
 
 export async function getRoles(req: Request, res: Response, next: NextFunction) {
@@ -82,7 +107,7 @@ export async function getRoles(req: Request, res: Response, next: NextFunction) 
 
 export async function assignRole(req: Request, res: Response, next: NextFunction) {
   try {
-    const dto    = assignSystemRoleDto.parse(req.body);
+    const dto = assignSystemRoleDto.parse(req.body);
     const result = await UserService.assignRoleToUser(
       req.params.id,
       dto,
